@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "commertize-agent"
+version = "0.1.0"
+description = "Read-only client and CLI for the public Commertize agent surface: the Work board, agent passport lookup and docs search over MCP, plus passport key generation and request signing."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+dependencies = []
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://github.com/Commertize-Inc/commertize-agent"
+Issues = "https://github.com/Commertize-Inc/commertize-agent/issues"
+
+[project.scripts]
+commertize-agent = "commertize_agent.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/commertize_agent"]

@@ -1,0 +1,68 @@
+{
+	"note": "Generated from the Commertize backend's request-signing code with ethers. The private key is sha256(utf8(privateKeySeed)), a public test key; never fund it. Digests are not stored: each signature covers the message, which covers the body digest.",
+	"privateKeySeed": "commertize-agent public test key v1",
+	"address": "0xfdd6c8d3a244773affdd922d28a0f6a4e54b6762",
+	"canonical": [
+		{
+			"input": {},
+			"json": "{}"
+		},
+		{
+			"input": {
+				"matchId": "m-1",
+				"limit": 10
+			},
+			"json": "{\"limit\":10,\"matchId\":\"m-1\"}"
+		},
+		{
+			"input": {
+				"z": [
+					3,
+					1,
+					{
+						"b": true,
+						"a": null
+					}
+				],
+				"a": "Zürich é",
+				"n": -7
+			},
+			"json": "{\"a\":\"Zürich é\",\"n\":-7,\"z\":[3,1,{\"a\":null,\"b\":true}]}"
+		}
+	],
+	"personalSign": [
+		{
+			"message": "hello",
+			"signature": "0x8ddaa4897d1c717a79de26682ef47a5203276b178767762f4909b813222ee37163638ccb6ad12aa51c23d5800d9c30b96040d6e748e404a1087dbd106ccf82161b"
+		},
+		{
+			"message": "Commertize passport v0",
+			"signature": "0x5860b3c2e2d95961348ef7494c196d8f9d2c8e1d7af1998dcd861553f03ea7b76e4b145e1af876e893eb96a935e1ce1a9426dc1875407767cc43fc9daf21a5281c"
+		},
+		{
+			"message": "",
+			"signature": "0xa8d5b1817f79e04069690f051e2a1e171f593f6e5ef87131164916a481c3876a61ed3c509786135581d9153563fed811ae0660f93710b1d83ee89ede187c67491b"
+		}
+	],
+	"agentRequests": [
+		{
+			"mandateId": "11111111-2222-4333-8444-555555555555",
+			"action": "matches.list",
+			"nonce": "nonce_0123456789abcdef",
+			"issuedAt": "2026-10-30T16:00:00.000Z",
+			"body": {
+				"matchId": "m-1",
+				"limit": 10
+			},
+			"signature": "0x1bc68ab88770344fb496a0d96e9c625c3eb509c5443643dec8715fb21c1d1b495f65105ca90e2b241b850806b655e1d4f56af4e96833e00951afa093d59c26971c"
+		},
+		{
+			"mandateId": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+			"action": "log.read",
+			"nonce": "ZZZZ-zzzz_0000-1111",
+			"issuedAt": "2026-10-30T16:05:30.000Z",
+			"body": {},
+			"signature": "0x26a4a4256573b0f4e7c7e400014b95f05001edadb3be694591a23a61de028747421825fc8f2e8a7994ae331760604f4912af8c52e22bda27972afe04fde9e71a1c"
+		}
+	]
+}

@@ -1,0 +1,162 @@
+{
+	"openapi": "3.1.0",
+	"info": {
+		"title": "Commertize Work API",
+		"version": "1.0.0",
+		"description": "The public Commertize Work task board. Read-only, no key. Claiming a task is not open through this API.",
+		"termsOfService": "https://commertize.com/terms"
+	},
+	"servers": [{ "url": "https://api.commertize.com" }],
+	"paths": {
+		"/work/v1/tasks": {
+			"get": {
+				"operationId": "listWorkTasks",
+				"summary": "Read the public Work board",
+				"responses": {
+					"200": {
+						"description": "The board. An empty task list is a valid board.",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/WorkBoard" }
+							}
+						}
+					},
+					"400": {
+						"description": "No client IP could be determined.",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Error" }
+							}
+						}
+					},
+					"429": {
+						"description": "Rate limited: about 60 requests per minute per client IP, counted per backend instance. See Retry-After.",
+						"content": {
+							"application/json": {
+								"schema": { "$ref": "#/components/schemas/Error" }
+							}
+						}
+					}
+				}
+			}
+		},
+		"/work/v1/tasks/{taskId}/submissions": {
+			"post": {
+				"operationId": "submitWorkTask",
+				"summary": "Submit to a task (not open)",
+				"parameters": [
+					{
+						"name": "taskId",
+						"in": "path",
+						"required": true,
+						"schema": { "type": "string" }
+					}
+				],
+				"responses": {
+					"501": {
+						"description": "Submissions are not open. The message says what is required.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"required": ["error", "gated", "message", "strings_ref"],
+									"properties": {
+										"error": { "const": "not_implemented" },
+										"gated": { "const": true },
+										"message": { "type": "string" },
+										"strings_ref": { "type": "string" }
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	},
+	"components": {
+		"schemas": {
+			"Error": {
+				"type": "object",
+				"required": ["error"],
+				"properties": { "error": { "type": "string" } }
+			},
+			"WorkBoard": {
+				"type": "object",
+				"required": [
+					"schema",
+					"generated_at",
+					"strings_ref",
+					"payouts_enabled",
+					"tasks"
+				],
+				"properties": {
+					"schema": { "const": "commertize.work.v1" },
+					"generated_at": {
+						"type": ["string", "null"],
+						"format": "date-time"
+					},
+					"strings_ref": { "type": "string" },
+					"payouts_enabled": { "const": false },
+					"tasks": {
+						"type": "array",
+						"maxItems": 500,
+						"items": { "$ref": "#/components/schemas/WorkTask" }
+					}
+				}
+			},
+			"WorkTask": {
+				"type": "object",
+				"required": [
+					"task_id",
+					"task_version",
+					"task_class",
+					"title_key",
+					"status",
+					"required_kya_tier",
+					"submissions_count",
+					"acceptance",
+					"source"
+				],
+				"properties": {
+					"task_id": { "type": "string" },
+					"task_version": { "type": "string" },
+					"task_class": { "type": "string" },
+					"title_key": { "type": "string" },
+					"status": { "enum": ["open", "closed"] },
+					"required_kya_tier": { "type": "string" },
+					"submissions_count": { "enum": ["<5", "5+"] },
+					"acceptance": {
+						"type": "object",
+						"required": ["method", "value_kind", "tolerance"],
+						"properties": {
+							"method": { "type": "string" },
+							"value_kind": { "type": "string" },
+							"tolerance": { "type": "string" }
+						}
+					},
+					"source": {
+						"type": "object",
+						"required": ["dataset_key", "snapshot_sha256"],
+						"properties": {
+							"dataset_key": { "type": "string" },
+							"snapshot_sha256": { "type": "string" }
+						}
+					},
+					"task_fee": {
+						"type": "object",
+						"description": "Open tasks only.",
+						"required": ["amount", "asset", "chain"],
+						"properties": {
+							"amount": { "type": "string" },
+							"asset": { "type": "string" },
+							"chain": { "type": "string" }
+						}
+					},
+					"deadline": { "type": "string", "format": "date-time" },
+					"posted_at": { "type": "string", "format": "date-time" }
+				}
+			}
+		}
+	}
+}

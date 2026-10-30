@@ -1,0 +1,37 @@
+{
+	"name": "@commertize/agent",
+	"version": "0.1.0",
+	"description": "Read-only client and CLI for the public Commertize agent surface: the Work board, agent passport lookup and docs search over MCP, plus passport key generation and request signing.",
+	"license": "Apache-2.0",
+	"type": "module",
+	"homepage": "https://github.com/Commertize-Inc/commertize-agent#readme",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/Commertize-Inc/commertize-agent.git",
+		"directory": "packages/js"
+	},
+	"bugs": "https://github.com/Commertize-Inc/commertize-agent/issues",
+	"engines": { "node": ">=20" },
+	"exports": {
+		".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" }
+	},
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"bin": { "commertize-agent": "bin/commertize-agent.mjs" },
+	"files": ["dist", "bin", "README.md", "LICENSE"],
+	"sideEffects": false,
+	"publishConfig": { "access": "public", "provenance": true },
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"test": "npm run build && node --test test/keys.test.mjs test/client.test.mjs",
+		"prepack": "npm run build"
+	},
+	"dependencies": {
+		"@noble/curves": "1.9.7",
+		"@noble/hashes": "1.8.0"
+	},
+	"devDependencies": {
+		"@types/node": "22.7.5",
+		"typescript": "5.9.3"
+	}
+}

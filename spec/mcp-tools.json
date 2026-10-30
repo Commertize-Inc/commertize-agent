@@ -1,0 +1,12 @@
+{
+	"endpoint": "https://api.commertize.com/mcp/public",
+	"source": "https://api.commertize.com/mcp/public tools/list",
+	"tools": [
+		{ "name": "work_board", "required": [] },
+		{ "name": "work_task", "required": ["task_id"] },
+		{ "name": "passport_lookup", "required": ["agent_address"] },
+		{ "name": "docs_search", "required": ["query"] }
+	],
+	"closed": ["job_take", "job_submit"],
+	"closedMessage": "Claiming tasks is not open."
+}
