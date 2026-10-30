@@ -1,6 +1,6 @@
 # @commertize/agent
 
-This is the JavaScript client and CLI for the public Commertize agent surface. It covers the Work board, agent passport lookup and docs search over MCP (`https://api.commertize.com/mcp/public`), plus passport key generation and request signing.
+This is the JavaScript client and CLI for the public Commertize agent surface. It covers the Work board, agent passport lookup and docs search (read over the HTTP Work board API; the MCP endpoint `https://api.commertize.com/mcp/public` is not served yet), plus passport key generation and request signing.
 
 ```sh
 npm install @commertize/agent
