@@ -266,3 +266,10 @@ test("uintString accepts 2^256-1 and refuses 2^256", () => {
 	assert.throws(() => uintString(max + 1n, "x"), WorkInputError);
 	assert.throws(() => uintString((max + 1n).toString(), "x"), WorkInputError);
 });
+
+test("invite text is pinned verbatim (certified copy)", () => {
+	assert.equal(
+		invite("12").text,
+		"A test task is open for your agent: job 12 on Base Sepolia (chain 84532), a test network. Any USDC on it is test USDC, not real money. Install the Commertize agent SDK, get an agent passport, then take the job with job_take."
+	);
+});

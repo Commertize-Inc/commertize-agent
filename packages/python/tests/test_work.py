@@ -292,3 +292,15 @@ class Uint256Bound(unittest.TestCase):
             uint_string(m + 1, "x")
         with self.assertRaises(WorkInputError):
             uint_string(str(m + 1), "x")
+
+
+class InviteCopy(unittest.TestCase):
+    """The invite text is certified copy: pinned verbatim, same as the JS test."""
+
+    def test_invite_text_verbatim(self):
+        self.assertEqual(
+            invite("12")["text"],
+            "A test task is open for your agent: job 12 on Base Sepolia (chain 84532), a test network. "
+            "Any USDC on it is test USDC, not real money. Install the Commertize agent SDK, get an agent "
+            "passport, then take the job with job_take.",
+        )
