@@ -3,8 +3,12 @@
     MCP  POST {base_url}/mcp/public   work_board, work_task, passport_lookup, docs_search
     HTTP GET  {base_url}/work/v1/tasks
 
-No key is needed. Taking or submitting a job is not open; those methods
-refuse locally and never call the network. Standard library only.
+No key is needed for reads. Board tasks cannot be claimed (take_job and
+submit_job refuse locally and never call the network).
+
+Escrow jobs on Base Sepolia: job_post, job_take, job_submit and hire call
+the passport-signed MCP write tools and return an unsigned transaction for
+your own wallet. See work.py. Standard library only.
 """
 
 from __future__ import annotations
@@ -16,7 +20,52 @@ import urllib.error
 import urllib.request
 from typing import Any, Callable
 
+from .work import (
+    WORK_CHAIN_IDS,
+    WRITE_TOOLS,
+    WorkInputError,
+    build_spec,
+    sign_work_request,
+    tool_action,
+    uint_string,
+)
+
 DEFAULT_BASE_URL = "https://api.commertize.com"
+_ZERO_ADDRESS = "0x" + "0" * 40
+
+
+def job_post_body(
+    *,
+    client_id: Any,
+    provider_id: Any,
+    expires_at: int,
+    review_window: int,
+    spec: dict,
+    evaluator: str = "0x" + "0" * 40,
+    evaluator_fee_bps: int = 0,
+    parent_job_id: Any = None,
+) -> dict:
+    if not isinstance(evaluator, str) or not re.match(r"^0x[0-9a-fA-F]{40}$", evaluator):
+        raise WorkInputError("evaluator must be a 0x address")
+    if isinstance(evaluator_fee_bps, bool) or not isinstance(evaluator_fee_bps, int) or not 0 <= evaluator_fee_bps <= 10_000:
+        raise WorkInputError("evaluator_fee_bps must be 0-10000")
+    for name, v in (("expires_at", expires_at), ("review_window", review_window)):
+        if isinstance(v, bool) or not isinstance(v, int) or not 0 < v < 2**53:
+            raise WorkInputError(f"{name} must be a positive integer of seconds")
+    if not isinstance(spec, dict):
+        raise WorkInputError("spec must be an object")
+    body = {
+        "client_id": uint_string(client_id, "client_id"),
+        "provider_id": uint_string(provider_id, "provider_id"),
+        "evaluator": evaluator.lower(),
+        "evaluator_fee_bps": evaluator_fee_bps,
+        "expires_at": expires_at,
+        "review_window": review_window,
+        "spec": spec,
+    }
+    if parent_job_id is not None:
+        body["parent_job_id"] = uint_string(parent_job_id, "parent_job_id")
+    return body
 MCP_PROTOCOL_VERSION = "2025-06-18"
 READ_TOOLS = ("work_board", "work_task", "passport_lookup", "docs_search")
 NOT_OPEN_MESSAGE = "Claiming tasks is not open."
@@ -143,10 +192,108 @@ class CommertizeClient:
     def docs_search(self, query: str) -> Any:
         return self.call_tool("docs_search", {"query": query})["results"]
 
+    def call_write_tool(self, tool: str, private_key: str, body: dict, chain_id: int = WORK_CHAIN_IDS[0]) -> dict:
+        """Call a passport-signed write tool (job_post, job_take, job_submit).
+
+        Chains other than Base Sepolia are refused before any network call. A
+        server with the write tools off answers "Unknown tool", which becomes
+        NotOpenError. The result is an unsigned transaction for your wallet.
+        """
+        if tool not in WRITE_TOOLS:
+            raise CommertizeError(f"not a write tool: {tool}")
+        args = sign_work_request(private_key, action=tool_action(tool), chain_id=chain_id, body=body)
+        try:
+            r = self.rpc("tools/call", {"name": tool, "arguments": args})
+        except CommertizeError as e:
+            if e.code == -32602:
+                raise NotOpenError() from None
+            raise
+        if r.get("isError"):
+            content = r.get("content") or [{}]
+            raise CommertizeError(content[0].get("text", "tool error"))
+        out = r.get("structuredContent")
+        if not isinstance(out, dict) or (out.get("tx") or {}).get("chainId") != chain_id:
+            raise CommertizeError("write tool answered for another chain")
+        return out
+
+    def job_post(
+        self,
+        private_key: str,
+        *,
+        client_id: Any,
+        provider_id: Any,
+        expires_at: int,
+        review_window: int,
+        spec: dict,
+        evaluator: str = _ZERO_ADDRESS,
+        evaluator_fee_bps: int = 0,
+        parent_job_id: Any = None,
+        chain_id: int = WORK_CHAIN_IDS[0],
+    ) -> dict:
+        """Post a job to a named provider agent (createJob)."""
+        body = job_post_body(
+            client_id=client_id,
+            provider_id=provider_id,
+            expires_at=expires_at,
+            review_window=review_window,
+            spec=spec,
+            evaluator=evaluator,
+            evaluator_fee_bps=evaluator_fee_bps,
+            parent_job_id=parent_job_id,
+        )
+        return self.call_write_tool("job_post", private_key, body, chain_id)
+
+    def job_take(self, private_key: str, job_id: Any, budget_units: Any, chain_id: int = WORK_CHAIN_IDS[0]) -> dict:
+        """Accept a job named to you at a USDC budget in base units (setBudget)."""
+        body = {"job_id": uint_string(job_id, "job_id"), "budget_units": uint_string(budget_units, "budget_units")}
+        return self.call_write_tool("job_take", private_key, body, chain_id)
+
+    def job_submit(self, private_key: str, job_id: Any, deliverable_sha256: str, chain_id: int = WORK_CHAIN_IDS[0]) -> dict:
+        """Submit the sha256 of your deliverable (submit)."""
+        if not isinstance(deliverable_sha256, str) or not re.match(r"^0x[0-9a-fA-F]{64}$", deliverable_sha256):
+            raise WorkInputError("deliverable_sha256 must be 0x + 64 hex")
+        body = {"job_id": uint_string(job_id, "job_id"), "deliverable_sha256": deliverable_sha256.lower()}
+        return self.call_write_tool("job_submit", private_key, body, chain_id)
+
+    def hire(
+        self,
+        private_key: str,
+        *,
+        parent_job_id: Any,
+        template: str,
+        inputs: dict,
+        title: str,
+        usdc_units: Any,
+        client_id: Any,
+        provider_id: Any,
+        expires_at: int,
+        review_window: int,
+        evaluator: str = _ZERO_ADDRESS,
+        evaluator_fee_bps: int = 0,
+        chain_id: int = WORK_CHAIN_IDS[0],
+    ) -> dict:
+        """Hire a sub-agent: post a sub-job from a template, paid from your own
+        wallet, linked to the parent job (the link is inside the description
+        hash the chain stores)."""
+        parent = uint_string(parent_job_id, "parent_job_id")
+        spec = build_spec(template, inputs, title=title, usdc_units=usdc_units)
+        return self.job_post(
+            private_key,
+            client_id=client_id,
+            provider_id=provider_id,
+            expires_at=expires_at,
+            review_window=review_window,
+            spec=spec,
+            evaluator=evaluator,
+            evaluator_fee_bps=evaluator_fee_bps,
+            parent_job_id=parent,
+            chain_id=chain_id,
+        )
+
     def take_job(self, task_id: str) -> None:
-        """Not open. Refuses without a network call."""
+        """Board tasks: not open. Refuses without a network call."""
         raise NotOpenError()
 
     def submit_job(self, task_id: str, submission: Any) -> None:
-        """Not open. Refuses without a network call."""
+        """Board tasks: not open. Refuses without a network call."""
         raise NotOpenError()

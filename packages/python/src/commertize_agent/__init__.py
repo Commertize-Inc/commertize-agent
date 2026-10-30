@@ -1,4 +1,4 @@
-"""Read-only client and CLI for the public Commertize agent surface."""
+"""Client and CLI for the public Commertize agent surface: reads, and passport-signed Work writes on Base Sepolia."""
 
 __version__ = "0.1.0"
 
@@ -46,4 +46,53 @@ __all__ = [
     "recover_address",
     "sign_agent_request",
     "sign_message",
+]
+from .work import (  # noqa: E402
+    DELEGATION_TEMPLATE_ID,
+    TEAM_LEAD_MAX_BPS,
+    TEAM_MAX_SIZE,
+    TEAM_TOTAL_BPS,
+    TEMPLATES,
+    WORK_ACTIONS,
+    WORK_CHAIN_IDS,
+    WRITE_TOOLS,
+    WorkInputError,
+    assert_work_chain,
+    build_spec,
+    check_team,
+    declare_team_calldata,
+    invite,
+    post_team_bond_calldata,
+    sign_team_acceptance,
+    sign_work_request,
+    team_digest,
+    templates_get,
+    templates_list,
+    work_message,
+)
+from .client import job_post_body  # noqa: E402
+
+__all__ += [
+    "DELEGATION_TEMPLATE_ID",
+    "TEAM_LEAD_MAX_BPS",
+    "TEAM_MAX_SIZE",
+    "TEAM_TOTAL_BPS",
+    "TEMPLATES",
+    "WORK_ACTIONS",
+    "WORK_CHAIN_IDS",
+    "WRITE_TOOLS",
+    "WorkInputError",
+    "assert_work_chain",
+    "build_spec",
+    "check_team",
+    "declare_team_calldata",
+    "invite",
+    "job_post_body",
+    "post_team_bond_calldata",
+    "sign_team_acceptance",
+    "sign_work_request",
+    "team_digest",
+    "templates_get",
+    "templates_list",
+    "work_message",
 ]

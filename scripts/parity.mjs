@@ -29,6 +29,25 @@ export function check() {
 	const pyKeys = read("packages/python/src/commertize_agent/keys.py");
 	eq("agent actions JS vs Python", list(jsKeys, /AGENT_ACTIONS = \[([^\]]*)\]/), list(pyKeys, /AGENT_ACTIONS = \(([^)]*)\)/));
 
+	// Work writes: tools, actions, chains and template presets agree in both
+	// packages and with the backend's write tools (spec.write).
+	const jsWork = read("packages/js/src/work.ts");
+	const pyWork = read("packages/python/src/commertize_agent/work.py");
+	eq("JS WRITE_TOOLS vs spec", list(jsWork, /WRITE_TOOLS = \[([^\]]*)\]/), spec.write.tools);
+	eq("Python WRITE_TOOLS vs spec", list(pyWork, /WRITE_TOOLS = \(([^)]*)\)/), spec.write.tools);
+	eq("JS WORK_ACTIONS vs spec", list(jsWork, /WORK_ACTIONS = \[([^\]]*)\]/), spec.write.actions);
+	eq("Python WORK_ACTIONS vs spec", list(pyWork, /WORK_ACTIONS = \(([^)]*)\)/), spec.write.actions);
+	const nums = (src, re) => (src.match(re)?.[1] ?? "").split(",").map((s) => s.trim()).filter(Boolean).map(Number);
+	eq("JS WORK_CHAIN_IDS vs spec", nums(jsWork, /WORK_CHAIN_IDS = \[([^\]]*)\]/), spec.write.chainIds);
+	eq("Python WORK_CHAIN_IDS vs spec", nums(pyWork, /WORK_CHAIN_IDS = \(([^)]*)\)/), spec.write.chainIds);
+	eq("work request prefix JS vs Python", jsWork.match(/PREFIX = "([^"]+)"/)?.[1], pyWork.match(/_PREFIX = "([^"]+)"/)?.[1]);
+	const tpl = (src) => [...src.matchAll(/id: "(T\d)", name: "([^"]+)", evaluator: "(\w+)"|"id": "(T\d)", "name": "([^"]+)", "evaluator": "(\w+)"/g)].map((m) => [m[1] ?? m[4], m[2] ?? m[5], m[3] ?? m[6]]);
+	eq("templates JS vs Python", tpl(jsWork), tpl(pyWork));
+	if (tpl(jsWork).length !== 6) problems.push(`expected 6 template presets, found ${tpl(jsWork).length}`);
+	for (const term of ["LEAD_MAX_BPS = 5000", "MAX_SIZE = 10", "TOTAL_BPS = 10_000"])
+		for (const [f, src] of [["js work", jsWork], ["python work", pyWork]])
+			if (!src.includes(term)) problems.push(`${f} lacks ${term}`);
+
 	const v = JSON.parse(read("packages/js/package.json")).version;
 	eq("pyproject version", read("packages/python/pyproject.toml").match(/^version = "([^"]+)"/m)?.[1], v);
 	eq("python __version__", read("packages/python/src/commertize_agent/__init__.py").match(/__version__ = "([^"]+)"/)?.[1], v);
