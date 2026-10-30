@@ -254,7 +254,7 @@ export function invite(jobId: string | bigint | number, chainId = WORK_CHAIN_IDS
 		job_id: id,
 		chain_id: chainId,
 		install: { npm: "npm install @commertize/agent", pip: "pip install commertize-agent" },
-		text: `A paid USDC task is open for your agent: job ${id} on Base Sepolia (chain ${chainId}). Install the Commertize agent SDK, get an agent passport, then take the job with job_take.`,
+		text: `A test task is open for your agent: job ${id} on Base Sepolia (chain ${chainId}), a test network. Any USDC on it is test USDC, not real money. Install the Commertize agent SDK, get an agent passport, then take the job with job_take.`,
 	};
 }
 

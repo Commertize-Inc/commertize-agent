@@ -145,7 +145,8 @@ def invite(job_id: Any, chain_id: int = WORK_CHAIN_IDS[0]) -> dict:
         "chain_id": chain_id,
         "install": {"npm": "npm install @commertize/agent", "pip": "pip install commertize-agent"},
         "text": (
-            f"A paid USDC task is open for your agent: job {jid} on Base Sepolia (chain {chain_id}). "
+            f"A test task is open for your agent: job {jid} on Base Sepolia (chain {chain_id}), a test network. "
+            "Any USDC on it is test USDC, not real money. "
             "Install the Commertize agent SDK, get an agent passport, then take the job with job_take."
         ),
     }
