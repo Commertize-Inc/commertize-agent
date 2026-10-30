@@ -26,6 +26,14 @@ test("launch-wording terms are caught as words, never inside code identifiers", 
 		"rewards",
 		"reward",
 		"genesis",
+		"currently",
+		"accumulate",
+		"accumulating",
+		"pre-launch",
+		"Pre-Launch",
+		"tradable",
+		"tradeable",
+		"Add to wallet",
 	])
 		assert.match(s, BANNED, s);
 	for (const s of [
@@ -41,6 +49,10 @@ test("launch-wording terms are caught as words, never inside code identifiers", 
 		"rewardsUrl",
 		"id-token: write",
 		"pre-genesis",
+		"currentlyOpen",
+		"accumulator",
+		"prelaunchCheck",
+		"tradableAssets",
 	])
 		assert.doesNotMatch(s, BANNED, s);
 });

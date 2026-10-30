@@ -17,13 +17,13 @@
 	},
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
-	"bin": { "commertize-agent": "bin/commertize-agent.mjs" },
+	"bin": { "commertize": "bin/commertize.mjs" },
 	"files": ["dist", "bin", "README.md", "LICENSE"],
 	"sideEffects": false,
 	"publishConfig": { "access": "public", "provenance": true },
 	"scripts": {
 		"build": "tsc -p tsconfig.json",
-		"test": "npm run build && node --test test/keys.test.mjs test/client.test.mjs",
+		"test": "npm run build && node --test test/keys.test.mjs test/client.test.mjs test/work.test.mjs",
 		"prepack": "npm run build"
 	},
 	"dependencies": {

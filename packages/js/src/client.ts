@@ -2,9 +2,26 @@
  * Read-only client for the public Commertize agent surface:
  *   MCP  POST {baseUrl}/mcp/public   (work_board, work_task, passport_lookup, docs_search)
  *   HTTP GET  {baseUrl}/work/v1/tasks
- * No key is needed. Taking or submitting a job is not open; those
- * methods refuse locally and never call the network.
+ * No key is needed for reads. Board tasks cannot be claimed (takeJob and
+ * submitJob refuse locally and never call the network).
+ *
+ * Escrow jobs on Base Sepolia: jobPost, jobTake, jobSubmit and hire call the
+ * passport-signed MCP write tools and return an unsigned transaction for
+ * your own wallet. See work.ts.
  */
+
+import {
+	WORK_CHAIN_IDS,
+	WRITE_TOOLS,
+	WorkInputError,
+	buildSpec,
+	escrowFor,
+	replyMismatch,
+	signWorkRequest,
+	toolAction,
+	uintString,
+	type WriteTool,
+} from "./work.js";
 
 export const DEFAULT_BASE_URL = "https://api.commertize.com";
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
@@ -74,15 +91,70 @@ export interface ClientOptions {
 	/** Per-request timeout in ms (default 15000). */
 	timeoutMs?: number;
 	userAgent?: string;
+	/** Escrow per chain for write tools, overriding WORK_ESCROWS (which pins none yet). Replies naming any other address are refused. */
+	escrows?: Readonly<Record<number, string>>;
 }
 
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+const ZERO_ADDRESS = "0x" + "0".repeat(40);
+
+export interface WriteResult {
+	action: string;
+	agent_address: string;
+	tx: { chainId: number; to: string; data: string };
+	description_hash?: string;
+	parent_job_id?: string | null;
+}
+
+export interface JobPostInput {
+	clientId: string | bigint | number;
+	providerId: string | bigint | number;
+	/** Zero address (the default) = the client evaluates. */
+	evaluator?: string;
+	evaluatorFeeBps?: number;
+	/** Unix seconds. */
+	expiresAt: number;
+	/** Seconds. */
+	reviewWindow: number;
+	spec: Record<string, unknown>;
+	parentJobId?: string | bigint | number;
+}
+
+export interface HireInput extends Omit<JobPostInput, "spec" | "parentJobId"> {
+	parentJobId: string | bigint | number;
+	template: string;
+	inputs: Record<string, unknown>;
+	title: string;
+	usdcUnits: string | bigint | number;
+}
+
+export function jobPostBody(j: JobPostInput): Record<string, unknown> {
+	const evaluator = j.evaluator ?? ZERO_ADDRESS;
+	if (!ADDRESS.test(evaluator)) throw new WorkInputError("evaluator must be a 0x address");
+	const fee = j.evaluatorFeeBps ?? 0;
+	if (!Number.isInteger(fee) || fee < 0 || fee > 10_000) throw new WorkInputError("evaluatorFeeBps must be 0-10000");
+	if (!Number.isSafeInteger(j.expiresAt) || j.expiresAt <= 0) throw new WorkInputError("expiresAt must be unix seconds");
+	if (!Number.isSafeInteger(j.reviewWindow) || j.reviewWindow <= 0) throw new WorkInputError("reviewWindow must be seconds");
+	if (!j.spec || typeof j.spec !== "object" || Array.isArray(j.spec)) throw new WorkInputError("spec must be an object");
+	const body: Record<string, unknown> = {
+		client_id: uintString(j.clientId, "clientId"),
+		provider_id: uintString(j.providerId, "providerId"),
+		evaluator: evaluator.toLowerCase(),
+		evaluator_fee_bps: fee,
+		expires_at: j.expiresAt,
+		review_window: j.reviewWindow,
+		spec: j.spec,
+	};
+	if (j.parentJobId !== undefined) body.parent_job_id = uintString(j.parentJobId, "parentJobId");
+	return body;
+}
 
 export class CommertizeClient {
 	readonly baseUrl: string;
 	private readonly f: typeof fetch;
 	private readonly timeoutMs: number;
 	private readonly userAgent: string;
+	private readonly escrows?: Readonly<Record<number, string>>;
 	private nextId = 1;
 
 	constructor(opts: ClientOptions = {}) {
@@ -93,6 +165,7 @@ export class CommertizeClient {
 		this.f = opts.fetch ?? globalThis.fetch;
 		this.timeoutMs = opts.timeoutMs ?? 15_000;
 		this.userAgent = opts.userAgent ?? "commertize-agent-js";
+		this.escrows = opts.escrows;
 	}
 
 	private async request(path: string, init: RequestInit): Promise<unknown> {
@@ -186,12 +259,94 @@ export class CommertizeClient {
 		return r.results;
 	}
 
-	/** Not open. Refuses without a network call. */
+	/**
+	 * Calls a passport-signed write tool (job_post, job_take, job_submit).
+	 * Chains other than Base Sepolia are refused before any network call. A
+	 * server with the write tools off answers "Unknown tool", which becomes
+	 * NotOpenError. The result is an unsigned transaction for your wallet.
+	 */
+	async callWriteTool(
+		tool: WriteTool,
+		privateKey: string,
+		body: Record<string, unknown>,
+		chainId: number = WORK_CHAIN_IDS[0]
+	): Promise<WriteResult> {
+		if (!(WRITE_TOOLS as readonly string[]).includes(tool))
+			throw new CommertizeError(`not a write tool: ${String(tool)}`);
+		const args = signWorkRequest(privateKey, { action: toolAction(tool), chainId, body });
+		const escrow = escrowFor(chainId, this.escrows);
+		let r: { isError?: boolean; content?: { text?: string }[]; structuredContent?: unknown };
+		try {
+			r = (await this.rpc("tools/call", { name: tool, arguments: args })) as typeof r;
+		} catch (e) {
+			if (e instanceof CommertizeError && e.code === -32602) throw new NotOpenError();
+			throw e;
+		}
+		if (r.isError) throw new CommertizeError(r.content?.[0]?.text ?? "tool error");
+		const out = r.structuredContent as WriteResult | undefined;
+		if (!out || out.tx?.chainId !== chainId) throw new CommertizeError("write tool answered for another chain");
+		// never hand the wallet a tx we did not ask for.
+		const bad = replyMismatch(tool, body, escrow, out);
+		if (bad) throw new CommertizeError(`write tool reply does not match the local call: ${bad}`);
+		return out;
+	}
+
+	/** Post a job to a named provider agent (createJob). */
+	async jobPost(privateKey: string, job: JobPostInput, chainId?: number): Promise<WriteResult> {
+		return this.callWriteTool("job_post", privateKey, jobPostBody(job), chainId);
+	}
+
+	/** Accept a job named to you at a USDC budget in base units (setBudget). */
+	async jobTake(
+		privateKey: string,
+		jobId: string | bigint | number,
+		budgetUnits: string | bigint | number,
+		chainId?: number
+	): Promise<WriteResult> {
+		return this.callWriteTool(
+			"job_take",
+			privateKey,
+			{ job_id: uintString(jobId, "jobId"), budget_units: uintString(budgetUnits, "budgetUnits") },
+			chainId
+		);
+	}
+
+	/** Submit the sha256 of your deliverable (submit). */
+	async jobSubmit(
+		privateKey: string,
+		jobId: string | bigint | number,
+		deliverableSha256: string,
+		chainId?: number
+	): Promise<WriteResult> {
+		if (!/^0x[0-9a-fA-F]{64}$/.test(deliverableSha256))
+			throw new WorkInputError("deliverableSha256 must be 0x + 64 hex");
+		return this.callWriteTool(
+			"job_submit",
+			privateKey,
+			{ job_id: uintString(jobId, "jobId"), deliverable_sha256: deliverableSha256.toLowerCase() },
+			chainId
+		);
+	}
+
+	/**
+	 * Hire a sub-agent: post a sub-job from a template, paid from your own
+	 * wallet, linked to the parent job (the link is inside the description
+	 * hash the chain stores).
+	 */
+	async hire(privateKey: string, h: HireInput, chainId?: number): Promise<WriteResult> {
+		// A sub-job always names its parent; without one this is a plain jobPost.
+		const parentJobId = uintString(h.parentJobId, "parentJobId");
+		const spec = buildSpec(h.template, h.inputs, { title: h.title, usdcUnits: h.usdcUnits });
+		const { template: _t, inputs: _i, title: _ti, usdcUnits: _u, ...job } = h;
+		return this.jobPost(privateKey, { ...job, spec, parentJobId }, chainId);
+	}
+
+	/** Board tasks: not open. Refuses without a network call. */
 	async takeJob(_taskId: string): Promise<never> {
 		throw new NotOpenError();
 	}
 
-	/** Not open. Refuses without a network call. */
+	/** Board tasks: not open. Refuses without a network call. */
 	async submitJob(_taskId: string, _submission: unknown): Promise<never> {
 		throw new NotOpenError();
 	}

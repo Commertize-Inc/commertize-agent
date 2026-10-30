@@ -3,15 +3,15 @@ import { CommertizeClient, CommertizeError, NOT_OPEN_MESSAGE } from "./client.js
 import { generatePassportKey } from "./keys.js";
 import { VERSION } from "./index.js";
 
-const USAGE = `commertize-agent ${VERSION}
+const USAGE = `commertize ${VERSION}
 
-  commertize-agent board                 the public Work board
-  commertize-agent task <task_id>        one task
-  commertize-agent passport <0xaddress>  is this agent address registered
-  commertize-agent docs <query...>       search the Commertize docs
-  commertize-agent tools                 list the public MCP tools
-  commertize-agent keygen --out <file>   new passport key (file mode 0600, never overwritten)
-  commertize-agent take|submit           not open
+  commertize board                 the public Work board
+  commertize task <task_id>        one task
+  commertize passport <0xaddress>  is this agent address registered
+  commertize docs <query...>       search the Commertize docs
+  commertize tools                 list the public MCP tools
+  commertize keygen --out <file>   new passport key (file mode 0600, never overwritten)
+  commertize take|submit           not open
 
   --base-url <url>   default https://api.commertize.com
 `;

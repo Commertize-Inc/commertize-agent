@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 // Launch-wording terms included. Whole words only, so code identifiers
 // (accessToken, token_id, id-token, earlyExit, comingSoon) never match.
 export const BANNED =
-	/\bCTZ\b|airdrop|\bprice|\blisting|\bvalue\b|\bearn|\byield|(?<![\w-])(?:not yet|coming|soon|TGE|early|points?|tokens?|rewards?|genesis)(?![\w-])/i;
+	/\bCTZ\b|airdrop|\bprice|\blisting|\bvalue\b|\bearn|\byield|(?<![\w-])(?:not yet|coming|soon|TGE|early|points?|tokens?|rewards?|genesis|currently|accumulat(?:e|es|ed|ing|ion)|pre-launch|trad(?:e)?able|add to wallet|paid USDC)(?![\w-])/i;
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SKIP_DIRS = new Set([".git", "node_modules", "dist", "build", "__pycache__", ".venv"]);
 // LICENSE is the Apache text, verbatim. This file and its test name the words.

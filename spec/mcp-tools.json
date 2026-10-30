@@ -7,6 +7,12 @@
 		{ "name": "passport_lookup", "required": ["agent_address"] },
 		{ "name": "docs_search", "required": ["query"] }
 	],
-	"closed": ["job_take", "job_submit"],
+	"write": {
+		"source": "Commertize-Inc/commertize.com apps/backend/src/mcp/workWrite.ts (PR #1248); listed only when the server enables them",
+		"tools": ["job_post", "job_take", "job_submit"],
+		"actions": ["job.post", "job.take", "job.submit"],
+		"chainIds": [84532],
+		"required": ["body", "nonce", "issued_at", "signature"]
+	},
 	"closedMessage": "Claiming tasks is not open."
 }
