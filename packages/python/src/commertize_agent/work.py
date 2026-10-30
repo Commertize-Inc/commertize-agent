@@ -257,3 +257,81 @@ def declare_team_calldata(job_id: Any, members: list, sigs: list) -> str:
 def post_team_bond_calldata(job_id: Any) -> str:
     job = int(uint_string(job_id, "job_id"))
     return "0x" + (_selector("postTeamBond(uint256)") + _word(job)).hex()
+
+
+# ------------------------------------------------------- reply verification
+
+# The AgentJobEscrow each chain's write tools must target, pinned in the SDK
+# release and never taken from the server. None = no reviewed escrow address
+# yet, so writes refuse locally unless the caller passes its own `escrows`.
+WORK_ESCROWS: dict = {84532: None}
+
+
+def description_hash(parent_job_id: Any, spec: dict) -> str:
+    """keccak256(canonical_json({parent_job_id, spec})), as the server and the chain store it."""
+    return "0x" + _k(canonical_json({"parent_job_id": parent_job_id, "spec": spec}).encode("utf-8")).hex()
+
+
+def _call(sig: str, *words: bytes) -> str:
+    return "0x" + (_selector(sig) + b"".join(words)).hex()
+
+
+def _int_word(v: Any, field: str) -> bytes:
+    if isinstance(v, bool) or not isinstance(v, int) or v < 0:
+        raise WorkInputError(f"{field} must be a non-negative integer")
+    return _word(v)
+
+
+def write_calldata(tool: str, body: dict) -> str:
+    """The calldata a write tool must return for this body, encoded locally."""
+    if tool == "job_take":
+        return _call(
+            "setBudget(uint256,uint256)",
+            _word(int(uint_string(body.get("job_id"), "job_id"))),
+            _word(int(uint_string(body.get("budget_units"), "budget_units"))),
+        )
+    if tool == "job_submit":
+        h = body.get("deliverable_sha256")
+        if not isinstance(h, str) or not _B32.match(h):
+            raise WorkInputError("deliverable_sha256 must be 0x + 64 hex")
+        return _call("submit(uint256,bytes32)", _word(int(uint_string(body.get("job_id"), "job_id"))), bytes.fromhex(h[2:]))
+    if tool == "job_post":
+        ev = body.get("evaluator")
+        if not isinstance(ev, str) or not _ADDRESS.match(ev):
+            raise WorkInputError("evaluator must be a 0x address")
+        parent = body.get("parent_job_id")
+        parent = None if parent is None else uint_string(parent, "parent_job_id")
+        return _call(
+            "createJob(uint256,uint256,address,uint16,uint64,uint32,bytes32)",
+            _word(int(uint_string(body.get("client_id"), "client_id"))),
+            _word(int(uint_string(body.get("provider_id"), "provider_id"))),
+            bytes.fromhex(ev[2:].lower().rjust(64, "0")),
+            _int_word(body.get("evaluator_fee_bps"), "evaluator_fee_bps"),
+            _int_word(body.get("expires_at"), "expires_at"),
+            _int_word(body.get("review_window"), "review_window"),
+            bytes.fromhex(description_hash(parent, body.get("spec"))[2:]),
+        )
+    raise WorkInputError(f"unknown write tool {tool}")
+
+
+def escrow_for(chain_id: int, override: dict | None = None) -> str:
+    """The pinned escrow for a chain, or the caller's override; refuses when neither is a 0x address."""
+    e = (override or {}).get(chain_id) or WORK_ESCROWS.get(chain_id)
+    if not isinstance(e, str) or not _ADDRESS.match(e) or int(e, 16) == 0:
+        raise WorkInputError(f"no reviewed escrow address is pinned for chain {chain_id}; writes are refused")
+    return e.lower()
+
+
+def reply_mismatch(tool: str, body: dict, escrow: str, reply: dict) -> str | None:
+    """None when the reply is exactly the call we asked for; otherwise what differs."""
+    tx = reply.get("tx") or {}
+    to = tx.get("to")
+    if not isinstance(to, str) or to.lower() != escrow.lower():
+        return "tx.to is not the pinned escrow"
+    data = tx.get("data")
+    if not isinstance(data, str) or data.lower() != write_calldata(tool, body):
+        return "tx.data is not the requested call"
+    if tool == "job_post" and "description_hash" in reply:
+        if str(reply["description_hash"]).lower() != description_hash(body.get("parent_job_id"), body.get("spec")):
+            return "description_hash is not the local one"
+    return None

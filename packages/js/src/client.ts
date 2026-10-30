@@ -15,6 +15,8 @@ import {
 	WRITE_TOOLS,
 	WorkInputError,
 	buildSpec,
+	escrowFor,
+	replyMismatch,
 	signWorkRequest,
 	toolAction,
 	uintString,
@@ -89,6 +91,8 @@ export interface ClientOptions {
 	/** Per-request timeout in ms (default 15000). */
 	timeoutMs?: number;
 	userAgent?: string;
+	/** Escrow per chain for write tools, overriding WORK_ESCROWS (which pins none yet). Replies naming any other address are refused. */
+	escrows?: Readonly<Record<number, string>>;
 }
 
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
@@ -150,6 +154,7 @@ export class CommertizeClient {
 	private readonly f: typeof fetch;
 	private readonly timeoutMs: number;
 	private readonly userAgent: string;
+	private readonly escrows?: Readonly<Record<number, string>>;
 	private nextId = 1;
 
 	constructor(opts: ClientOptions = {}) {
@@ -160,6 +165,7 @@ export class CommertizeClient {
 		this.f = opts.fetch ?? globalThis.fetch;
 		this.timeoutMs = opts.timeoutMs ?? 15_000;
 		this.userAgent = opts.userAgent ?? "commertize-agent-js";
+		this.escrows = opts.escrows;
 	}
 
 	private async request(path: string, init: RequestInit): Promise<unknown> {
@@ -268,6 +274,7 @@ export class CommertizeClient {
 		if (!(WRITE_TOOLS as readonly string[]).includes(tool))
 			throw new CommertizeError(`not a write tool: ${String(tool)}`);
 		const args = signWorkRequest(privateKey, { action: toolAction(tool), chainId, body });
+		const escrow = escrowFor(chainId, this.escrows);
 		let r: { isError?: boolean; content?: { text?: string }[]; structuredContent?: unknown };
 		try {
 			r = (await this.rpc("tools/call", { name: tool, arguments: args })) as typeof r;
@@ -278,6 +285,9 @@ export class CommertizeClient {
 		if (r.isError) throw new CommertizeError(r.content?.[0]?.text ?? "tool error");
 		const out = r.structuredContent as WriteResult | undefined;
 		if (!out || out.tx?.chainId !== chainId) throw new CommertizeError("write tool answered for another chain");
+		// never hand the wallet a tx we did not ask for.
+		const bad = replyMismatch(tool, body, escrow, out);
+		if (bad) throw new CommertizeError(`write tool reply does not match the local call: ${bad}`);
 		return out;
 	}
 

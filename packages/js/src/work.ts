@@ -88,6 +88,89 @@ export function signWorkRequest(
 	return { body: input.body, nonce, issued_at: issuedAt, signature: signMessage(privateKey, message) };
 }
 
+// ------------------------------------------------------- reply verification
+
+/**
+ * The AgentJobEscrow each chain's write tools must target. Pinned in the
+ * SDK release, never taken from the server. null = no reviewed escrow
+ * address yet, so writes refuse locally (no network call) unless the
+ * caller passes its own `escrows` option.
+ */
+export const WORK_ESCROWS: Readonly<Record<number, string | null>> = {
+	84532: null,
+};
+
+/** keccak256(canonicalJson({ parent_job_id, spec })), as the server and the chain store it. */
+export function descriptionHash(parentJobId: string | null, spec: Record<string, unknown>): string {
+	return "0x" + bytesToHex(keccak_256(utf8ToBytes(canonicalJson({ parent_job_id: parentJobId, spec }))));
+}
+
+const call = (sig: string, ...words: Uint8Array[]) =>
+	"0x" + bytesToHex(concatBytes(keccak_256(utf8ToBytes(sig)).slice(0, 4), ...words));
+const w256 = (n: bigint) => hexToBytes(n.toString(16).padStart(64, "0"));
+
+/**
+ * The calldata a write tool must return for this body, encoded locally
+ * from the body this SDK signed and sent.
+ */
+export function writeCalldata(tool: WriteTool, body: Record<string, unknown>): string {
+	if (tool === "job_take")
+		return call(
+			"setBudget(uint256,uint256)",
+			w256(BigInt(uintString(body.job_id, "job_id"))),
+			w256(BigInt(uintString(body.budget_units, "budget_units")))
+		);
+	if (tool === "job_submit") {
+		const h = body.deliverable_sha256;
+		if (typeof h !== "string" || !B32.test(h)) throw new WorkInputError("deliverable_sha256 must be 0x + 64 hex");
+		return call("submit(uint256,bytes32)", w256(BigInt(uintString(body.job_id, "job_id"))), hexToBytes(h.slice(2)));
+	}
+	if (tool === "job_post") {
+		const ev = body.evaluator;
+		if (typeof ev !== "string" || !ADDRESS.test(ev)) throw new WorkInputError("evaluator must be a 0x address");
+		const parent = body.parent_job_id === undefined ? null : uintString(body.parent_job_id, "parent_job_id");
+		const spec = body.spec as Record<string, unknown>;
+		return call(
+			"createJob(uint256,uint256,address,uint16,uint64,uint32,bytes32)",
+			w256(BigInt(uintString(body.client_id, "client_id"))),
+			w256(BigInt(uintString(body.provider_id, "provider_id"))),
+			hexToBytes(ev.slice(2).toLowerCase().padStart(64, "0")),
+			w256(BigInt(body.evaluator_fee_bps as number)),
+			w256(BigInt(body.expires_at as number)),
+			w256(BigInt(body.review_window as number)),
+			hexToBytes(descriptionHash(parent, spec).slice(2))
+		);
+	}
+	throw new WorkInputError(`unknown write tool ${String(tool)}`);
+}
+
+/** The pinned escrow for a chain, or the caller's override; refuses when neither is a 0x address. */
+export function escrowFor(chainId: number, override?: Readonly<Record<number, string>>): string {
+	const e = override?.[chainId] ?? WORK_ESCROWS[chainId] ?? null;
+	if (typeof e !== "string" || !ADDRESS.test(e) || /^0x0{40}$/.test(e))
+		throw new WorkInputError(`no reviewed escrow address is pinned for chain ${chainId}; writes are refused`);
+	return e.toLowerCase();
+}
+
+/** null when the reply is exactly the call we asked for; otherwise what differs. */
+export function replyMismatch(
+	tool: WriteTool,
+	body: Record<string, unknown>,
+	escrow: string,
+	reply: { tx?: { to?: unknown; data?: unknown }; description_hash?: unknown }
+): string | null {
+	const to = reply.tx?.to;
+	if (typeof to !== "string" || to.toLowerCase() !== escrow.toLowerCase()) return "tx.to is not the pinned escrow";
+	const data = reply.tx?.data;
+	if (typeof data !== "string" || data.toLowerCase() !== writeCalldata(tool, body)) return "tx.data is not the requested call";
+	if (tool === "job_post" && reply.description_hash !== undefined) {
+		const parent = body.parent_job_id === undefined ? null : String(body.parent_job_id);
+		if (String(reply.description_hash).toLowerCase() !== descriptionHash(parent, body.spec as Record<string, unknown>))
+			return "description_hash is not the local one";
+	}
+	return null;
+}
+
 // ---------------------------------------------------------------- templates
 
 export type EvaluatorMode = "test_oracle" | "client" | "auto_delivery";

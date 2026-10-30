@@ -25,6 +25,8 @@ from .work import (
     WRITE_TOOLS,
     WorkInputError,
     build_spec,
+    escrow_for,
+    reply_mismatch,
     sign_work_request,
     tool_action,
     uint_string,
@@ -105,6 +107,7 @@ class CommertizeClient:
         transport: Transport | None = None,
         timeout: float = 15.0,
         user_agent: str = "commertize-agent-python",
+        escrows: dict | None = None,
     ) -> None:
         base = base_url.rstrip("/")
         if not _BASE.match(base):
@@ -113,6 +116,8 @@ class CommertizeClient:
         self._t = transport or _urllib_transport
         self._timeout = timeout
         self._ua = user_agent
+        # Escrow per chain for write tools, overriding WORK_ESCROWS (which pins none yet).
+        self._escrows = dict(escrows) if escrows else None
         self._ids = itertools.count(1)
 
     def _request(self, method: str, path: str, headers: dict | None = None, body: Any = None) -> Any:
@@ -202,6 +207,7 @@ class CommertizeClient:
         if tool not in WRITE_TOOLS:
             raise CommertizeError(f"not a write tool: {tool}")
         args = sign_work_request(private_key, action=tool_action(tool), chain_id=chain_id, body=body)
+        escrow = escrow_for(chain_id, self._escrows)
         try:
             r = self.rpc("tools/call", {"name": tool, "arguments": args})
         except CommertizeError as e:
@@ -214,6 +220,10 @@ class CommertizeClient:
         out = r.get("structuredContent")
         if not isinstance(out, dict) or (out.get("tx") or {}).get("chainId") != chain_id:
             raise CommertizeError("write tool answered for another chain")
+        # never hand the wallet a tx we did not ask for.
+        bad = reply_mismatch(tool, body, escrow, out)
+        if bad:
+            raise CommertizeError(f"write tool reply does not match the local call: {bad}")
         return out
 
     def job_post(

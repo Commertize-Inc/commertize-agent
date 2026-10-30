@@ -18,6 +18,9 @@ import {
 	teamDigest,
 	templates,
 	workMessage,
+	WORK_ESCROWS,
+	uintString,
+	writeCalldata,
 } from "../dist/index.js";
 
 const V = JSON.parse(readFileSync(new URL("../../../spec/vectors/work.json", import.meta.url), "utf8"));
@@ -26,6 +29,7 @@ const BANNED = (
 ).BANNED;
 const keyOf = (seed) => "0x" + createHash("sha256").update(seed, "utf8").digest("hex");
 const KEY = keyOf(V.privateKeySeed);
+const PIN = { 84532: V.escrow };
 const bodyOf = (r) =>
 	r.deliverableSeed ? { ...r.body, deliverable_sha256: "0x" + createHash("sha256").update(r.deliverableSeed, "utf8").digest("hex") } : r.body;
 const fields = (r) => ({ action: r.action, chainId: r.chainId, bodySha256: createHash("sha256").update(JSON.stringify(sortKeys(bodyOf(r))), "utf8").digest("hex"), nonce: r.nonce, issuedAt: r.issuedAt });
@@ -63,7 +67,7 @@ test("Work request signatures match the backend's vectors byte for byte", () => 
 test("hire builds exactly the backend vector's job_post body from template T4", async () => {
 	const post = V.workRequests.find((r) => r.tool === "job_post");
 	const { f, calls } = fakeFetch(answer({ structuredContent: post.result }));
-	const c = new CommertizeClient({ fetch: f });
+	const c = new CommertizeClient({ fetch: f, escrows: PIN });
 	const out = await c.hire(KEY, {
 		parentJobId: 41,
 		template: "T4",
@@ -73,7 +77,7 @@ test("hire builds exactly the backend vector's job_post body from template T4", 
 		clientId: 7,
 		providerId: "9",
 		expiresAt: post.body.expires_at,
-		reviewWindow: 3600,
+		reviewWindow: 259200,
 	});
 	assert.deepEqual(out, post.result);
 	const args = calls[0].body.params.arguments;
@@ -94,7 +98,7 @@ function sortKeys(v) {
 test("jobTake and jobSubmit send the tool name and body the backend vectors use", async () => {
 	for (const r of V.workRequests.filter((x) => x.tool !== "job_post")) {
 		const { f, calls } = fakeFetch(answer({ structuredContent: r.result }));
-		const c = new CommertizeClient({ fetch: f });
+		const c = new CommertizeClient({ fetch: f, escrows: PIN });
 		const out =
 			r.tool === "job_take"
 				? await c.jobTake(KEY, 12n, "5000000")
@@ -117,15 +121,15 @@ test("a chain other than Base Sepolia is refused before any network call", async
 
 test("a server with write tools off (Unknown tool) gives NotOpenError", async () => {
 	const { f } = fakeFetch((b) => [200, { jsonrpc: "2.0", id: b.id, error: { code: -32602, message: "Unknown tool: job_take" } }]);
-	await assert.rejects(new CommertizeClient({ fetch: f }).jobTake(KEY, 1, 1), NotOpenError);
+	await assert.rejects(new CommertizeClient({ fetch: f, escrows: PIN }).jobTake(KEY, 1, 1), NotOpenError);
 });
 
 test("a tool error and a reply for another chain both throw", async () => {
 	const e = fakeFetch(answer({ isError: true, content: [{ type: "text", text: "no active agent passport" }] }));
-	await assert.rejects(new CommertizeClient({ fetch: e.f }).jobTake(KEY, 1, 1), /passport/);
+	await assert.rejects(new CommertizeClient({ fetch: e.f, escrows: PIN }).jobTake(KEY, 1, 1), /passport/);
 	const other = { ...V.workRequests[0].result, tx: { ...V.workRequests[0].result.tx, chainId: 8453 } };
 	const o = fakeFetch(answer({ structuredContent: other }));
-	await assert.rejects(new CommertizeClient({ fetch: o.f }).jobTake(KEY, 1, 1), /another chain/);
+	await assert.rejects(new CommertizeClient({ fetch: o.f, escrows: PIN }).jobTake(KEY, 1, 1), /another chain/);
 });
 
 test("bad ids, amounts and hashes are refused locally", async () => {
@@ -194,4 +198,71 @@ test("checkTeam refuses what the contract refuses", () => {
 	const d = { ...V.team.domain, chainId: 8453 };
 	assert.throws(() => teamDigest(d, 1, m([5000, 5000])), WorkInputError);
 	assert.throws(() => declareTeamCalldata(1, m([5000, 5000]), ["0x" + "00".repeat(65)]), /one signature/);
+});
+
+// ---- the reply is re-encoded locally and must match.
+
+const post = V.workRequests.find((r) => r.tool === "job_post");
+const replyFor = (r, over = {}) => ({ ...r.result, tx: { ...r.result.tx, ...over } });
+const callVector = (c, r) =>
+	r.tool === "job_take"
+		? c.jobTake(KEY, r.body.job_id, r.body.budget_units)
+		: r.tool === "job_submit"
+			? c.jobSubmit(KEY, r.body.job_id, bodyOf(r).deliverable_sha256)
+			: c.jobPost(KEY, {
+					clientId: r.body.client_id,
+					providerId: r.body.provider_id,
+					evaluator: r.body.evaluator,
+					evaluatorFeeBps: r.body.evaluator_fee_bps,
+					expiresAt: r.body.expires_at,
+					reviewWindow: r.body.review_window,
+					spec: r.body.spec,
+					parentJobId: r.body.parent_job_id,
+				});
+
+test("local calldata equals the backend vectors for all three tools", () => {
+	for (const r of V.workRequests) assert.equal(writeCalldata(r.tool, bodyOf(r)), r.result.tx.data, r.tool);
+});
+
+test("no escrow is pinned in this release, so writes refuse before any network call", async () => {
+	assert.equal(WORK_ESCROWS[84532], null);
+	const { f, calls } = fakeFetch(answer({ structuredContent: V.workRequests[0].result }));
+	await assert.rejects(new CommertizeClient({ fetch: f }).jobTake(KEY, 12, 5000000), /escrow/);
+	await assert.rejects(new CommertizeClient({ fetch: f, escrows: { 84532: "0x12" } }).jobTake(KEY, 12, 5000000), /escrow/);
+	await assert.rejects(new CommertizeClient({ fetch: f, escrows: { 84532: "0x" + "0".repeat(40) } }).jobTake(KEY, 12, 5000000), /escrow/);
+	assert.equal(calls.length, 0);
+});
+
+test("a reply to another address than the pinned escrow is refused (every tool)", async () => {
+	for (const r of V.workRequests) {
+		const { f } = fakeFetch(answer({ structuredContent: replyFor(r, { to: "0x" + "e6".repeat(20) }) }));
+		await assert.rejects(callVector(new CommertizeClient({ fetch: f, escrows: PIN }), r), /does not match/, r.tool);
+		// Control: the untouched reply passes, and case differences in `to` are not a mismatch.
+		const ok = fakeFetch(answer({ structuredContent: replyFor(r, { to: r.result.tx.to.toUpperCase().replace("0X", "0x") }) }));
+		assert.ok(await callVector(new CommertizeClient({ fetch: ok.f, escrows: PIN }), r), r.tool);
+	}
+});
+
+test("a reply whose calldata is not the call we asked for is refused (every tool)", async () => {
+	const approve = "0x095ea7b3" + V.escrow.slice(2).padStart(64, "0") + "f".repeat(64);
+	for (const r of V.workRequests)
+		for (const data of [approve, r.result.tx.data.slice(0, -2) + "00", r.result.tx.data + "00"]) {
+			const { f } = fakeFetch(answer({ structuredContent: replyFor(r, { data }) }));
+			await assert.rejects(callVector(new CommertizeClient({ fetch: f, escrows: PIN }), r), /does not match/, r.tool);
+		}
+});
+
+test("job_post: a description_hash in the reply must be the local one", async () => {
+	const bad = { ...post.result, description_hash: "0x" + "00".repeat(32) };
+	const { f } = fakeFetch(answer({ structuredContent: bad }));
+	await assert.rejects(callVector(new CommertizeClient({ fetch: f, escrows: PIN }), post), /does not match/);
+});
+
+// ---- the uint256 upper bound.
+test("uintString accepts 2^256-1 and refuses 2^256", () => {
+	const max = (1n << 256n) - 1n;
+	assert.equal(uintString(max, "x"), max.toString());
+	assert.equal(uintString(max.toString(), "x"), max.toString());
+	assert.throws(() => uintString(max + 1n, "x"), WorkInputError);
+	assert.throws(() => uintString((max + 1n).toString(), "x"), WorkInputError);
 });

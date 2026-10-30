@@ -22,6 +22,9 @@ from commertize_agent import (
     team_digest,
     templates_get,
     templates_list,
+    uint_string,
+    write_calldata,
+    WORK_ESCROWS,
 )
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
@@ -36,6 +39,7 @@ def key_of(seed):
 
 
 KEY = key_of(V["privateKeySeed"])
+PIN = {84532: V["escrow"]}
 
 
 def body_of(r):
@@ -84,7 +88,7 @@ class WorkClient(unittest.TestCase):
     def test_hire_builds_the_vector_body(self):
         post = next(r for r in V["workRequests"] if r["tool"] == "job_post")
         t = Fake(answer({"structuredContent": post["result"]}))
-        out = CommertizeClient(transport=t).hire(
+        out = CommertizeClient(transport=t, escrows=PIN).hire(
             KEY,
             parent_job_id=41,
             template="T4",
@@ -94,7 +98,7 @@ class WorkClient(unittest.TestCase):
             client_id=7,
             provider_id="9",
             expires_at=post["body"]["expires_at"],
-            review_window=3600,
+            review_window=259200,
         )
         self.assertEqual(out, post["result"])
         p = t.calls[0]["params"]
@@ -106,7 +110,7 @@ class WorkClient(unittest.TestCase):
             if r["tool"] == "job_post":
                 continue
             t = Fake(answer({"structuredContent": r["result"]}))
-            c = CommertizeClient(transport=t)
+            c = CommertizeClient(transport=t, escrows=PIN)
             if r["tool"] == "job_take":
                 out = c.job_take(KEY, 12, "5000000")
             else:
@@ -117,17 +121,17 @@ class WorkClient(unittest.TestCase):
     def test_unknown_tool_is_not_open(self):
         t = Fake(lambda b: (200, {"jsonrpc": "2.0", "id": b["id"], "error": {"code": -32602, "message": "Unknown tool"}}))
         with self.assertRaises(NotOpenError):
-            CommertizeClient(transport=t).job_take(KEY, 1, 1)
+            CommertizeClient(transport=t, escrows=PIN).job_take(KEY, 1, 1)
 
     def test_tool_error_and_other_chain_reply(self):
         t = Fake(answer({"isError": True, "content": [{"type": "text", "text": "no active agent passport"}]}))
         with self.assertRaisesRegex(Exception, "passport"):
-            CommertizeClient(transport=t).job_take(KEY, 1, 1)
+            CommertizeClient(transport=t, escrows=PIN).job_take(KEY, 1, 1)
         other = dict(V["workRequests"][0]["result"])
         other["tx"] = dict(other["tx"], chainId=8453)
         t2 = Fake(answer({"structuredContent": other}))
         with self.assertRaisesRegex(Exception, "another chain"):
-            CommertizeClient(transport=t2).job_take(KEY, 1, 1)
+            CommertizeClient(transport=t2, escrows=PIN).job_take(KEY, 1, 1)
 
     def test_bad_inputs_refused_locally(self):
         t = Fake(answer({}))
@@ -209,3 +213,82 @@ class Teams(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _reply(r, **over):
+    return {**r["result"], "tx": {**r["result"]["tx"], **over}}
+
+
+def _call(c, r):
+    b = r["body"]
+    if r["tool"] == "job_take":
+        return c.job_take(KEY, b["job_id"], b["budget_units"])
+    if r["tool"] == "job_submit":
+        return c.job_submit(KEY, b["job_id"], body_of(r)["deliverable_sha256"])
+    return c.job_post(
+        KEY,
+        client_id=b["client_id"],
+        provider_id=b["provider_id"],
+        evaluator=b["evaluator"],
+        evaluator_fee_bps=b["evaluator_fee_bps"],
+        expires_at=b["expires_at"],
+        review_window=b["review_window"],
+        spec=b["spec"],
+        parent_job_id=b["parent_job_id"],
+    )
+
+
+class ReplyCheck(unittest.TestCase):
+    """the reply is re-encoded locally and must match."""
+
+    def test_local_calldata_equals_vectors(self):
+        for r in V["workRequests"]:
+            self.assertEqual(write_calldata(r["tool"], body_of(r)), r["result"]["tx"]["data"], r["tool"])
+
+    def test_no_pin_refuses_before_network(self):
+        self.assertIsNone(WORK_ESCROWS[84532])
+        t = Fake(answer({"structuredContent": V["workRequests"][0]["result"]}))
+        with self.assertRaisesRegex(WorkInputError, "escrow"):
+            CommertizeClient(transport=t).job_take(KEY, 12, 5000000)
+        with self.assertRaisesRegex(WorkInputError, "escrow"):
+            CommertizeClient(transport=t, escrows={84532: "0x12"}).job_take(KEY, 12, 5000000)
+        with self.assertRaisesRegex(WorkInputError, "escrow"):
+            CommertizeClient(transport=t, escrows={84532: "0x" + "0" * 40}).job_take(KEY, 12, 5000000)
+        self.assertEqual(t.calls, [])
+
+    def test_wrong_to_refused_every_tool(self):
+        for r in V["workRequests"]:
+            t = Fake(answer({"structuredContent": _reply(r, to="0x" + "e6" * 20)}))
+            with self.assertRaisesRegex(Exception, "does not match"):
+                _call(CommertizeClient(transport=t, escrows=PIN), r)
+            ok = Fake(answer({"structuredContent": _reply(r, to="0x" + r["result"]["tx"]["to"][2:].upper())}))
+            self.assertTrue(_call(CommertizeClient(transport=ok, escrows=PIN), r))
+
+    def test_wrong_data_refused_every_tool(self):
+        approve = "0x095ea7b3" + V["escrow"][2:].rjust(64, "0") + "f" * 64
+        for r in V["workRequests"]:
+            d = r["result"]["tx"]["data"]
+            for data in (approve, d[:-2] + "00", d + "00"):
+                t = Fake(answer({"structuredContent": _reply(r, data=data)}))
+                with self.assertRaisesRegex(Exception, "does not match"):
+                    _call(CommertizeClient(transport=t, escrows=PIN), r)
+
+    def test_description_hash_must_match(self):
+        post = next(r for r in V["workRequests"] if r["tool"] == "job_post")
+        bad = {**post["result"], "description_hash": "0x" + "00" * 32}
+        t = Fake(answer({"structuredContent": bad}))
+        with self.assertRaisesRegex(Exception, "does not match"):
+            _call(CommertizeClient(transport=t, escrows=PIN), post)
+
+
+class Uint256Bound(unittest.TestCase):
+    """The uint256 upper bound."""
+
+    def test_upper_bound(self):
+        m = (1 << 256) - 1
+        self.assertEqual(uint_string(m, "x"), str(m))
+        self.assertEqual(uint_string(str(m), "x"), str(m))
+        with self.assertRaises(WorkInputError):
+            uint_string(m + 1, "x")
+        with self.assertRaises(WorkInputError):
+            uint_string(str(m + 1), "x")
