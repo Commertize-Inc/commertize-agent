@@ -36,6 +36,15 @@ export function check() {
 	for (const [f, src] of [["js client", jsClient], ["python client", pyClient]])
 		for (const m of src.matchAll(/"version"?:? ?"(\d+\.\d+\.\d+)"/g)) eq(`${f} clientInfo version`, m[1], v);
 
+	// One command name in both packages, distinct from @commertize/agent-kit's
+	// `commertize-agent` bin so the two can be installed side by side.
+	const pkg = JSON.parse(read("packages/js/package.json"));
+	eq("JS bin names", Object.keys(pkg.bin), ["commertize"]);
+	eq("Python console scripts", [...read("packages/python/pyproject.toml").matchAll(/^([\w-]+) = "commertize_agent\.cli:main"$/gm)].map((m) => m[1]), ["commertize"]);
+	eq("JS bin file", pkg.bin.commertize, "bin/commertize.mjs");
+	for (const [f, src] of [["js cli", read("packages/js/src/cli.ts")], ["python cli", read("packages/python/src/commertize_agent/cli.py")]])
+		if (/^\s+commertize-agent /m.test(src)) problems.push(`${f} usage still names commertize-agent`);
+
 	const api = JSON.parse(read("spec/openapi/work-v1.json")).components.schemas;
 	const block = (name) => jsClient.match(new RegExp(`interface ${name} \\{([\\s\\S]*?)\\n\\}`))?.[1] ?? "";
 	const fields = (b) => [...b.matchAll(/^\t(\w+)(\?)?:/gm)].map((m) => m[1]).sort();

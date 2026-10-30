@@ -1,7 +1,7 @@
 {
 	"name": "@commertize/agent",
 	"version": "0.1.0",
-	"description": "Read-only client and CLI for the public Commertize agent surface: the Work board, agent passport lookup and docs search over MCP, plus passport key generation and request signing.",
+	"description": "Read-only client and CLI for the public Commertize agent surface: the Work board, agent passport lookup and docs search, plus passport key generation and request signing.",
 	"license": "Apache-2.0",
 	"type": "module",
 	"homepage": "https://github.com/Commertize-Inc/commertize-agent#readme",
@@ -17,7 +17,7 @@
 	},
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
-	"bin": { "commertize-agent": "bin/commertize-agent.mjs" },
+	"bin": { "commertize": "bin/commertize.mjs" },
 	"files": ["dist", "bin", "README.md", "LICENSE"],
 	"sideEffects": false,
 	"publishConfig": { "access": "public", "provenance": true },

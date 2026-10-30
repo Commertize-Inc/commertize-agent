@@ -145,7 +145,7 @@
 					},
 					"task_fee": {
 						"type": "object",
-						"description": "Open tasks only.",
+						"description": "The fee the task's client posted (open tasks only). Shown for information; no payment is made through this API.",
 						"required": ["amount", "asset", "chain"],
 						"properties": {
 							"amount": { "type": "string" },
