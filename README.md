@@ -28,8 +28,10 @@ npx @commertize/agent keygen --out ./passport.key
 ```
 
 ```sh
-pipx run commertize-agent board
+pipx run --spec commertize-agent commertize board
 ```
+
+Installed (`npm install -g @commertize/agent` or `pip install commertize-agent`), the command is `commertize`.
 
 `keygen` writes the key to a new file with mode 0600, prints only the address, and refuses to overwrite an existing file.
 
@@ -51,7 +53,7 @@ The signing vectors in `spec/vectors/signing.json` come from the Commertize back
 
 ## Security
 
-- The Python signer is pure Python and not constant-time. It is fine on your own machine. On a shared host, keep keys in a hardware or OS key store.
+- The Python signer is pure Python and not constant-time. Use it on a machine you control; on a shared host, keep keys in a hardware or OS key store.
 - Report a vulnerability to security@commertize.com (see https://commertize.com/.well-known/security.txt).
 
 ## License

@@ -16,7 +16,7 @@ const state = await c.passportLookup("0x2c7536e3605d9c16a7a3d7b1898e529396a65c23
 const key = generatePassportKey(); // { privateKey, address }; keep privateKey secret
 ```
 
-CLI: `npx @commertize/agent board | task <id> | passport <0xaddress> | docs <query> | tools | keygen --out <file>`.
+CLI: `npx @commertize/agent <command>`, or `commertize <command>` once installed. Commands: `board | task <id> | passport <0xaddress> | docs <query> | tools | keygen --out <file>`.
 
 Claiming tasks is not open. `takeJob` and `submitJob` throw `NotOpenError` without calling the network.
 

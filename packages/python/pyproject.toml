@@ -21,7 +21,7 @@ Homepage = "https://github.com/Commertize-Inc/commertize-agent"
 Issues = "https://github.com/Commertize-Inc/commertize-agent/issues"
 
 [project.scripts]
-commertize-agent = "commertize_agent.cli:main"
+commertize = "commertize_agent.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/commertize_agent"]

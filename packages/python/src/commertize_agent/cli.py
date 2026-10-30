@@ -1,4 +1,4 @@
-"""commertize-agent command line."""
+"""commertize command line."""
 
 from __future__ import annotations
 
@@ -10,15 +10,15 @@ from . import __version__
 from .client import NOT_OPEN_MESSAGE, CommertizeClient, CommertizeError
 from .keys import generate_passport_key
 
-USAGE = f"""commertize-agent {__version__}
+USAGE = f"""commertize {__version__}
 
-  commertize-agent board                 the public Work board
-  commertize-agent task <task_id>        one task
-  commertize-agent passport <0xaddress>  is this agent address registered
-  commertize-agent docs <query...>       search the Commertize docs
-  commertize-agent tools                 list the public MCP tools
-  commertize-agent keygen --out <file>   new passport key (file mode 0600, never overwritten)
-  commertize-agent take|submit           not open
+  commertize board                 the public Work board
+  commertize task <task_id>        one task
+  commertize passport <0xaddress>  is this agent address registered
+  commertize docs <query...>       search the Commertize docs
+  commertize tools                 list the public MCP tools
+  commertize keygen --out <file>   new passport key (file mode 0600, never overwritten)
+  commertize take|submit           not open
 
   --base-url <url>   default https://api.commertize.com
 """
